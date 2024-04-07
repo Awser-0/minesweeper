@@ -1,5 +1,6 @@
-import 'dart:math';
-
+import 'dart:async';
+import 'dart:ui';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 // import 'package:flutter_svg/flutter_svg.dart';
 
@@ -44,14 +45,39 @@ class _HomePageState extends State<HomePage> {
 }
 
 class GameWrapper extends StatefulWidget {
+  @override
+  State<GameWrapper> createState() => _GameWrapperState();
+}
+
+class _GameWrapperState extends State<GameWrapper> {
   int row = 9;
   int col = 9;
   int mineCount = 10;
   // bool isOver = false;
   DateTime? startAt;
   DateTime? endAt;
+  int get startSeconds {
+    if (startAt == null) {
+      return 0;
+    } else {
+      int milliseconds = 0;
+      if (endAt != null) {
+        milliseconds =
+            endAt!.millisecondsSinceEpoch - startAt!.millisecondsSinceEpoch;
+      } else {
+        milliseconds = DateTime.now().millisecondsSinceEpoch -
+            startAt!.millisecondsSinceEpoch;
+      }
+      return milliseconds ~/ 1000;
+    }
+  }
+
   List<CellInfo> list = [];
-  GameWrapper({super.key}) {
+
+  void setLevel({required int row, required int col, required int mineCount}) {
+    this.row = row;
+    this.col = col;
+    this.mineCount = mineCount;
     reset();
   }
 
@@ -181,55 +207,45 @@ class GameWrapper extends StatefulWidget {
     return true;
   }
 
-  void cellTap(int i, int j) {
-    if (!_isStart()) {
-      onStart(i, j);
-    }
-    if (_isEnd() || !_showCell(i, j)) return;
-    // 检测是不是只剩炸弹
-    // 还没点开格子的数量
-    int notShowCount = 0;
-    for (var item in list) {
-      if (!item.isShow) {
-        notShowCount++;
+  void cellTap(int i, int j, bool isMouseRight) {
+    if (_isEnd()) return;
+    int index = i * col + j;
+    // 右键插旗
+    if (isMouseRight) {
+      if (!list[index].isShow) {
+        list[index].isFlag = !list[index].isFlag;
+        list[index].updateUrl();
       }
-      item.updateUrl();
+    } else {
+      // 点击事件
+      if (!_isStart()) {
+        onStart(i, j);
+      }
+      // 插旗状态点击，
+      if (list[index].isFlag) return;
+      if (!_showCell(i, j)) return;
+      // 检测是不是只剩炸弹
+      // 还没点开格子的数量
+      int notShowCount = 0;
+      for (var item in list) {
+        if (!item.isShow) {
+          notShowCount++;
+        }
+        item.updateUrl();
+      }
+      // 还没点开总数 小于等于 炸弹总数，游戏一定结束
+      if (notShowCount <= mineCount) {
+        onEnd(true);
+      }
     }
-    // 还没点开总数 小于等于 炸弹总数，游戏一定结束
-    if (notShowCount <= mineCount) {
-      onEnd(true);
-    }
-    // list[index].isShow = true;
-    // if (list[index].isMine) {
-    //   // 点开炸弹，游戏结束，提示信息
-    //   list[index].isBlast = true;
-    //   onEnd(false);
-    // } else {
-    //   // 点击格子周围炸弹数为0，自动点开周围格子
-    //   if (list[index].count == 0) {
-    //     cellTap(i - 1, j - 1);
-    //     cellTap(i - 1, j);
-    //     cellTap(i - 1, j + 1);
-    //     cellTap(i, j - 1);
-    //     cellTap(i, j + 1);
-    //     cellTap(i + 1, j - 1);
-    //     cellTap(i + 1, j);
-    //     cellTap(i + 1, j + 1);
-    //   }
-    // }
   }
 
   @override
-  State<GameWrapper> createState() => _GameWrapperState();
-}
-
-class _GameWrapperState extends State<GameWrapper> {
-  // int row = 9;
-  // int col = 9;
-  // int mineCount = 10;
-  // final blockSize = 30.0;
-  @override
   void initState() {
+    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      setState(() {});
+    });
+    reset();
     super.initState();
   }
 
@@ -237,23 +253,45 @@ class _GameWrapperState extends State<GameWrapper> {
   Widget build(BuildContext context) {
     return Center(
       child: Container(
-          width: double.infinity, //宽度
+          width: col * 30 + 24, //宽度
           decoration: const BoxDecoration(
             color: Color.fromRGBO(192, 192, 192, 1),
+            borderRadius: BorderRadius.all(Radius.circular(6)),
           ), //装饰器
-          padding: const EdgeInsets.all(0), //内容距离盒子边界的距离
+          padding: const EdgeInsets.all(12), //内容距离盒子边界的距离
           margin: const EdgeInsets.all(0), //长度
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              GameInfo(smileOnTap: () {
-                widget.reset();
-                setState(() {});
-              }),
+              Container(
+                child:
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  GameLevel("初级", onTap: () {
+                    setLevel(row: 9, col: 9, mineCount: 10);
+                  }),
+                  GameLevel("中级", onTap: () {
+                    setLevel(row: 16, col: 16, mineCount: 40);
+                  }),
+                  GameLevel("高级", onTap: () {
+                    setLevel(row: 16, col: 30, mineCount: 99);
+                  }),
+                ]),
+              ),
+              GameInfo(
+                  mineCount: mineCount,
+                  startSeconds: startSeconds,
+                  smileOnTap: () {
+                    reset();
+                    setState(() {});
+                  }),
+              const SizedBox(
+                height: 10,
+              ),
               CellsBlock(
-                row: widget.row,
-                col: widget.col,
-                list: widget.list,
-                cellTap: widget.cellTap,
+                row: row,
+                col: col,
+                list: list,
+                cellTap: cellTap,
               )
             ],
           ) //盒子边界之外的距离
@@ -262,23 +300,93 @@ class _GameWrapperState extends State<GameWrapper> {
   }
 }
 
-class GameInfo extends StatelessWidget {
-  void Function()? smileOnTap;
-  GameInfo({super.key, this.smileOnTap});
+class GameLevel extends StatelessWidget {
+  final String _title;
+  final void Function()? onTap;
+  const GameLevel(this._title, {super.key, this.onTap});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        smileOnTap!();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(4.0),
-        child: Image.asset(
-          "assets/images/smile.png",
-          width: 30,
-          height: 30,
-          fit: BoxFit.cover,
-        ),
+        onTap: () {
+          onTap!();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          child: Text(
+            _title,
+            style: const TextStyle(
+                fontSize: 17,
+                color: Color.fromRGBO(0, 0, 255, 1),
+                decorationThickness: 1),
+          ),
+        ));
+  }
+}
+
+class GameInfo extends StatefulWidget {
+  final int mineCount;
+  final int startSeconds;
+  final void Function()? smileOnTap;
+  const GameInfo(
+      {super.key,
+      required this.mineCount,
+      required this.startSeconds,
+      this.smileOnTap});
+  @override
+  State<StatefulWidget> createState() => _GameInfoState();
+}
+
+class _GameInfoState extends State<GameInfo> {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+          border: Border(
+              left: BorderSide(width: 2, color: Color(0xFF808080)),
+              top: BorderSide(width: 2, color: Color(0xFF808080)),
+              right: BorderSide(width: 2, color: Color(0xFFFFFFFF)),
+              bottom: BorderSide(width: 2, color: Color(0xFFFFFFFF)))),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: <Widget>[
+          Container(
+            width: 100,
+            // color: Colors.blue,
+            padding: const EdgeInsets.all(10),
+            child: Text(
+              widget.mineCount.toString(),
+              style: const TextStyle(fontSize: 20, letterSpacing: 1),
+            ),
+          ),
+          Flexible(
+              child: GestureDetector(
+            onTap: () {
+              widget.smileOnTap!();
+            },
+            child: Container(
+              padding: const EdgeInsets.all(4.0),
+              child: Image.asset(
+                "assets/images/smile.png",
+                width: 30,
+                height: 30,
+                fit: BoxFit.cover,
+              ),
+            ),
+          )),
+          Container(
+            width: 100,
+            // color: Colors.blue,
+            padding: const EdgeInsets.all(10),
+            child: Text(
+              '${widget.startSeconds > 9999 ? 9999 : widget.startSeconds}秒',
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                  fontSize: 20,
+                  letterSpacing: 1,
+                  textBaseline: TextBaseline.alphabetic),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -321,7 +429,7 @@ class CellsBlock extends StatefulWidget {
   // int mineCount;
   // bool isOver = false;
   late List<CellInfo> list = [];
-  void Function(int i, int j) cellTap;
+  void Function(int i, int j, bool isMouseRight) cellTap;
   CellsBlock(
       {super.key,
       required this.row,
@@ -331,10 +439,10 @@ class CellsBlock extends StatefulWidget {
       required this.list});
 
   @override
-  State<CellsBlock> createState() => CellsBlockState();
+  State<CellsBlock> createState() => _CellsBlockState();
 }
 
-class CellsBlockState extends State<CellsBlock> {
+class _CellsBlockState extends State<CellsBlock> {
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -361,18 +469,25 @@ class CellsBlockState extends State<CellsBlock> {
             ),
             itemCount: widget.row * widget.col,
             itemBuilder: (BuildContext context, int index) {
-              return GestureDetector(
-                onTap: () {
-                  widget.cellTap(index ~/ widget.col, index % widget.col);
-                  setState(() {});
-                },
-                child: Image.asset(
-                  widget.list[index].url,
-                  width: 30,
-                  height: 30,
-                  fit: BoxFit.cover,
-                ),
-              );
+              return Listener(
+                  onPointerDown: (PointerDownEvent event) async {
+                    if (event.kind == PointerDeviceKind.mouse &&
+                        event.buttons == kSecondaryMouseButton) {
+                      widget.cellTap(
+                          index ~/ widget.col, index % widget.col, true);
+                      setState(() {});
+                    } else {
+                      widget.cellTap(
+                          index ~/ widget.col, index % widget.col, false);
+                      setState(() {});
+                    }
+                  },
+                  child: Image.asset(
+                    widget.list[index].url,
+                    width: 30,
+                    height: 30,
+                    fit: BoxFit.cover,
+                  ));
             }));
   }
 }
